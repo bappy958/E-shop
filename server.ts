@@ -14,7 +14,6 @@ import {
   INITIAL_ORDERS,
 } from './src/data/initialData.ts';
 import { sanitizeText, toNumberOrDefault, toSlug } from './src/serverUtils.ts';
-import { buildPersistedState, hydratePersistedState } from './src/persistence.ts';
 
 dotenv.config();
 
@@ -26,6 +25,7 @@ const PORT = Number(process.env.PORT || 3000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://amsamiul27_db_user:db_password@cluster0.pzavbis.mongodb.net/?appName=Cluster0';
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'unique_collection';
 
 let mongoClient: MongoClient | null = null;
 let mongoConnected = false;
@@ -94,18 +94,44 @@ let reviews: any[] = [...fallbackState.reviews];
 let ordersStore: any[] = [...fallbackState.ordersStore];
 let customersStore: any[] = [...fallbackState.customersStore];
 
+function normalizeMongoDocument<T extends Record<string, any>>(doc: T | null | undefined) {
+  if (!doc) {
+    return null;
+  }
+
+  const { _id, ...rest } = doc;
+  return {
+    ...rest,
+    id: rest.id || (typeof _id === 'string' ? _id : undefined),
+  };
+}
+
 async function syncStateToPersistence() {
   if (!mongoConnected || !mongoClient) {
     return;
   }
 
   try {
-    const db = mongoClient.db('unique_collection');
-    const collection = db.collection('app_state');
-    await collection.updateOne(
-      { _id: 'app-state' },
-      { $set: buildPersistedState({ products, categories, brands, coupons, banners, reviews, ordersStore, customersStore }) },
-      { upsert: true }
+    const db = mongoClient.db(MONGODB_DB_NAME);
+    const collections = [
+      { name: 'products', items: products },
+      { name: 'categories', items: categories },
+      { name: 'brands', items: brands },
+      { name: 'coupons', items: coupons },
+      { name: 'banners', items: banners },
+      { name: 'reviews', items: reviews },
+      { name: 'orders', items: ordersStore },
+      { name: 'customers', items: customersStore },
+    ];
+
+    await Promise.all(
+      collections.map(async ({ name, items }) => {
+        const collection = db.collection(name);
+        await collection.deleteMany({});
+        if (items.length > 0) {
+          await collection.insertMany(items.map((item) => ({ ...item, _id: item.id || `${name}-${Date.now()}-${Math.random()}` })));
+        }
+      })
     );
   } catch (error) {
     console.warn('Failed to persist state to MongoDB:', error);
@@ -118,18 +144,25 @@ async function hydrateStateFromPersistence() {
   }
 
   try {
-    const db = mongoClient.db('unique_collection');
-    const collection = db.collection('app_state');
-    const doc = await collection.findOne<{ products?: any[]; categories?: any[]; brands?: any[]; coupons?: any[]; banners?: any[]; reviews?: any[]; ordersStore?: any[]; customersStore?: any[] }>({ _id: 'app-state' });
-    const hydrated = hydratePersistedState(doc, fallbackState);
-    products = [...hydrated.products];
-    categories = [...hydrated.categories];
-    brands = [...hydrated.brands];
-    coupons = [...hydrated.coupons];
-    banners = [...hydrated.banners];
-    reviews = [...hydrated.reviews];
-    ordersStore = [...hydrated.ordersStore];
-    customersStore = [...hydrated.customersStore];
+    const db = mongoClient.db(MONGODB_DB_NAME);
+    const collectionNames = ['products', 'categories', 'brands', 'coupons', 'banners', 'reviews', 'orders', 'customers'];
+    const docs = await Promise.all(
+      collectionNames.map(async (name) => {
+        const collection = db.collection(name);
+        const items = await collection.find({}).toArray();
+        return items.map((item) => normalizeMongoDocument(item));
+      })
+    );
+
+    const [productsDocs, categoriesDocs, brandsDocs, couponsDocs, bannersDocs, reviewsDocs, ordersDocs, customersDocs] = docs;
+    products = [...(productsDocs || [])];
+    categories = [...(categoriesDocs || [])];
+    brands = [...(brandsDocs || [])];
+    coupons = [...(couponsDocs || [])];
+    banners = [...(bannersDocs || [])];
+    reviews = [...(reviewsDocs || [])];
+    ordersStore = [...(ordersDocs || [])];
+    customersStore = [...(customersDocs || [])];
   } catch (error) {
     console.warn('Failed to hydrate state from MongoDB:', error);
   }
@@ -187,7 +220,12 @@ void connectMongo().then(async () => {
 
 // 1. Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', store: 'Unique Collection 4.0', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    store: 'Unique Collection 4.0',
+    database: mongoConnected ? 'mongodb' : 'memory-fallback',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ==================== IMAGE UPLOAD API ====================
