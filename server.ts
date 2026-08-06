@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ServerApiVersion } from 'mongodb';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -25,7 +25,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://amsamiul27_db_user:db_password@cluster0.pzavbis.mongodb.net/?retryWrites=true&w=majority';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://amsamiul27_db_user:db_password@cluster0.pzavbis.mongodb.net/?appName=Cluster0';
 
 let mongoClient: MongoClient | null = null;
 let mongoConnected = false;
@@ -158,10 +158,17 @@ async function connectMongo() {
   }
 
   try {
-    mongoClient = new MongoClient(MONGODB_URI);
+    mongoClient = new MongoClient(MONGODB_URI, {
+      serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+      },
+    });
     await mongoClient.connect();
+    await mongoClient.db('admin').command({ ping: 1 });
     mongoConnected = true;
-    console.log('MongoDB connected successfully');
+    console.log('Pinged your deployment. You successfully connected to MongoDB!');
     return mongoClient;
   } catch (error) {
     console.warn('MongoDB connection failed, continuing with in-memory data:', error);
