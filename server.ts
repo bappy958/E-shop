@@ -14,6 +14,7 @@ import {
   INITIAL_ORDERS,
 } from './src/data/initialData.ts';
 import { sanitizeText, toNumberOrDefault, toSlug } from './src/serverUtils.ts';
+import { buildPersistedState, hydratePersistedState } from './src/persistence.ts';
 
 dotenv.config();
 
@@ -42,14 +43,15 @@ app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // In-memory data persistence store initialized with rich Bangladeshi fashion data
-let products: any[] = [...INITIAL_PRODUCTS];
-let categories: any[] = [...INITIAL_CATEGORIES];
-let brands: any[] = [...INITIAL_BRANDS];
-let coupons: any[] = [...INITIAL_COUPONS];
-let banners: any[] = [...INITIAL_BANNERS];
-let reviews: any[] = [...INITIAL_REVIEWS];
-let ordersStore: any[] = [...INITIAL_ORDERS];
-let customersStore: any[] = [
+const fallbackState = {
+  products: [...INITIAL_PRODUCTS],
+  categories: [...INITIAL_CATEGORIES],
+  brands: [...INITIAL_BRANDS],
+  coupons: [...INITIAL_COUPONS],
+  banners: [...INITIAL_BANNERS],
+  reviews: [...INITIAL_REVIEWS],
+  ordersStore: [...INITIAL_ORDERS],
+  customersStore: [
   {
     id: 'usr-1',
     name: 'Md. Tanvir Hossain',
@@ -70,17 +72,68 @@ let customersStore: any[] = [
     totalOrdersCount: 1,
     createdAt: '2026-08-03',
   },
-  {
-    id: 'usr-3',
-    name: 'Sakib Rahman',
-    email: 'sakib@gmail.com',
-    phone: '01911223344',
-    role: 'customer',
-    totalSpent: 4120,
-    totalOrdersCount: 1,
-    createdAt: '2026-08-05',
-  },
-];
+    {
+      id: 'usr-3',
+      name: 'Sakib Rahman',
+      email: 'sakib@gmail.com',
+      phone: '01911223344',
+      role: 'customer',
+      totalSpent: 4120,
+      totalOrdersCount: 1,
+      createdAt: '2026-08-05',
+    },
+  ],
+};
+
+let products: any[] = [...fallbackState.products];
+let categories: any[] = [...fallbackState.categories];
+let brands: any[] = [...fallbackState.brands];
+let coupons: any[] = [...fallbackState.coupons];
+let banners: any[] = [...fallbackState.banners];
+let reviews: any[] = [...fallbackState.reviews];
+let ordersStore: any[] = [...fallbackState.ordersStore];
+let customersStore: any[] = [...fallbackState.customersStore];
+
+async function syncStateToPersistence() {
+  if (!mongoConnected || !mongoClient) {
+    return;
+  }
+
+  try {
+    const db = mongoClient.db('unique_collection');
+    const collection = db.collection('app_state');
+    await collection.updateOne(
+      { _id: 'app-state' },
+      { $set: buildPersistedState({ products, categories, brands, coupons, banners, reviews, ordersStore, customersStore }) },
+      { upsert: true }
+    );
+  } catch (error) {
+    console.warn('Failed to persist state to MongoDB:', error);
+  }
+}
+
+async function hydrateStateFromPersistence() {
+  if (!mongoConnected || !mongoClient) {
+    return;
+  }
+
+  try {
+    const db = mongoClient.db('unique_collection');
+    const collection = db.collection('app_state');
+    const doc = await collection.findOne<{ products?: any[]; categories?: any[]; brands?: any[]; coupons?: any[]; banners?: any[]; reviews?: any[]; ordersStore?: any[]; customersStore?: any[] }>({ _id: 'app-state' });
+    const hydrated = hydratePersistedState(doc, fallbackState);
+    products = [...hydrated.products];
+    categories = [...hydrated.categories];
+    brands = [...hydrated.brands];
+    coupons = [...hydrated.coupons];
+    banners = [...hydrated.banners];
+    reviews = [...hydrated.reviews];
+    ordersStore = [...hydrated.ordersStore];
+    customersStore = [...hydrated.customersStore];
+  } catch (error) {
+    console.warn('Failed to hydrate state from MongoDB:', error);
+  }
+}
 
 // Initialize Gemini Client safely
 let ai: GoogleGenAI | null = null;
@@ -117,7 +170,11 @@ async function connectMongo() {
   }
 }
 
-void connectMongo();
+void connectMongo().then(async () => {
+  if (mongoConnected) {
+    await hydrateStateFromPersistence();
+  }
+});
 
 // REST API Endpoints
 
@@ -280,6 +337,7 @@ app.post('/api/products', (req, res) => {
   };
 
   products.unshift(newProduct);
+  void syncStateToPersistence();
   res.status(201).json({ success: true, product: newProduct });
 });
 
@@ -300,12 +358,14 @@ app.put('/api/products/:id', (req, res) => {
   };
 
   products[index] = updated;
+  void syncStateToPersistence();
   res.json({ success: true, product: updated });
 });
 
 // Delete Product
 app.delete('/api/products/:id', (req, res) => {
   products = products.filter((p) => p.id !== req.params.id);
+  void syncStateToPersistence();
   res.json({ success: true, id: req.params.id });
 });
 
@@ -327,6 +387,7 @@ app.post('/api/products/duplicate/:id', (req, res) => {
   };
 
   products.unshift(duplicated);
+  void syncStateToPersistence();
   res.status(201).json({ success: true, product: duplicated });
 });
 
@@ -345,6 +406,7 @@ app.post('/api/products/bulk-action', (req, res) => {
     products = products.map((p) => (ids.includes(p.id) ? { ...p, status: 'hidden' } : p));
   }
 
+  void syncStateToPersistence();
   res.json({ success: true, count: ids.length, action });
 });
 
@@ -369,6 +431,7 @@ app.post('/api/categories', (req, res) => {
     parentCategory: sanitizeText(parentCategory, 'None'),
   };
   categories.unshift(newCat);
+  void syncStateToPersistence();
   res.status(201).json({ success: true, category: newCat });
 });
 
@@ -376,11 +439,13 @@ app.put('/api/categories/:id', (req, res) => {
   const idx = categories.findIndex((c) => c.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Category not found' });
   categories[idx] = { ...categories[idx], ...req.body };
+  void syncStateToPersistence();
   res.json({ success: true, category: categories[idx] });
 });
 
 app.delete('/api/categories/:id', (req, res) => {
   categories = categories.filter((c) => c.id !== req.params.id);
+  void syncStateToPersistence();
   res.json({ success: true, id: req.params.id });
 });
 
@@ -401,6 +466,7 @@ app.post('/api/brands', (req, res) => {
     status: sanitizeText(status, 'active'),
   };
   brands.unshift(newBrand);
+  void syncStateToPersistence();
   res.status(201).json({ success: true, brand: newBrand });
 });
 
@@ -408,11 +474,13 @@ app.put('/api/brands/:id', (req, res) => {
   const idx = brands.findIndex((b) => b.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Brand not found' });
   brands[idx] = { ...brands[idx], ...req.body };
+  void syncStateToPersistence();
   res.json({ success: true, brand: brands[idx] });
 });
 
 app.delete('/api/brands/:id', (req, res) => {
   brands = brands.filter((b) => b.id !== req.params.id);
+  void syncStateToPersistence();
   res.json({ success: true, id: req.params.id });
 });
 
@@ -437,6 +505,7 @@ app.post('/api/coupons', (req, res) => {
     isActive: isActive ?? true,
   };
   coupons.unshift(newCoupon);
+  void syncStateToPersistence();
   res.status(201).json({ success: true, coupon: newCoupon });
 });
 
@@ -444,11 +513,13 @@ app.put('/api/coupons/:id', (req, res) => {
   const idx = coupons.findIndex((c) => c.id === req.params.id || c.code === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Coupon not found' });
   coupons[idx] = { ...coupons[idx], ...req.body };
+  void syncStateToPersistence();
   res.json({ success: true, coupon: coupons[idx] });
 });
 
 app.delete('/api/coupons/:id', (req, res) => {
   coupons = coupons.filter((c) => c.id !== req.params.id && c.code !== req.params.id);
+  void syncStateToPersistence();
   res.json({ success: true, id: req.params.id });
 });
 
@@ -481,11 +552,13 @@ app.patch('/api/reviews/:id/status', (req, res) => {
   const idx = reviews.findIndex((r) => r.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Review not found' });
   reviews[idx].status = status;
+  void syncStateToPersistence();
   res.json({ success: true, review: reviews[idx] });
 });
 
 app.delete('/api/reviews/:id', (req, res) => {
   reviews = reviews.filter((r) => r.id !== req.params.id);
+  void syncStateToPersistence();
   res.json({ success: true, id: req.params.id });
 });
 
@@ -511,6 +584,7 @@ app.post('/api/orders', (req, res) => {
     estimatedDeliveryDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   };
   ordersStore.unshift(newOrder);
+  void syncStateToPersistence();
 
   // Update customer spend stats if matching user
   const custIndex = customersStore.findIndex((c) => c.email === newOrder.userEmail);
@@ -541,6 +615,7 @@ app.patch('/api/orders/:id/status', (req, res) => {
   if (status) ordersStore[idx].orderStatus = status;
   if (paymentStatus) ordersStore[idx].paymentStatus = paymentStatus;
 
+  void syncStateToPersistence();
   res.json({ success: true, order: ordersStore[idx] });
 });
 
