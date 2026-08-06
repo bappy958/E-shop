@@ -1,0 +1,6 @@
+{
+  "name": "Unique Collection 4.0",
+  "description": "Premium Bangladeshi fashion brand offering Men's Shirts, Panjabi, Women's Hijab, Borka, and Girls Collection with AI fashion assistant, BDT pricing, and nationwide delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
