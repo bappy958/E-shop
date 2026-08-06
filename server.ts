@@ -11,6 +11,7 @@ import {
   INITIAL_REVIEWS,
   INITIAL_ORDERS,
 } from './src/data/initialData.ts';
+import { sanitizeText, toNumberOrDefault, toSlug } from './src/serverUtils.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -191,53 +192,59 @@ app.get('/api/products/:id', (req, res) => {
 
 // Create Product
 app.post('/api/products', (req, res) => {
-  const p = req.body;
-  const slug = p.slug || (p.titleEn || p.titleBn || 'product').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-  const sku = p.sku || `UC-${p.category ? p.category.slice(0, 3).toUpperCase() : 'GEN'}-${Math.floor(100 + Math.random() * 900)}`;
+  const p = req.body || {};
+  const titleEn = sanitizeText(p.titleEn, sanitizeText(p.titleBn, 'New Product'));
+  const titleBn = sanitizeText(p.titleBn, titleEn);
+  const category = sanitizeText(p.category, 'panjabi');
+  const slug = sanitizeText(p.slug, toSlug(titleEn, 'product'));
+  const sku = sanitizeText(p.sku, `UC-${category.slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`);
+  const price = toNumberOrDefault(p.price, 0);
+  const originalPrice = p.originalPrice !== undefined ? toNumberOrDefault(p.originalPrice, price) : undefined;
+  const stockCount = toNumberOrDefault(p.stockCount, 50);
+  const lowStockThreshold = toNumberOrDefault(p.lowStockThreshold, 10);
+  const discountPercent = originalPrice && originalPrice > price
+    ? Math.round(((originalPrice - price) / originalPrice) * 100)
+    : toNumberOrDefault(p.discountPercent, 0);
 
   const newProduct = {
     id: `p-${Date.now()}`,
-    titleBn: p.titleBn || p.titleEn || 'নতুন পণ্য',
-    titleEn: p.titleEn || p.titleBn || 'New Product',
+    titleBn,
+    titleEn,
     slug,
     sku,
-    category: p.category || 'panjabi',
-    brand: p.brand || 'Unique Royal',
-    price: Number(p.price) || 0,
-    originalPrice: p.originalPrice ? Number(p.originalPrice) : undefined,
-    discountPercent: p.originalPrice && Number(p.originalPrice) > Number(p.price)
-      ? Math.round(((Number(p.originalPrice) - Number(p.price)) / Number(p.originalPrice)) * 100)
-      : p.discountPercent || 0,
-    thumbnail: p.thumbnail || (p.images && p.images[0]) || 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=600&q=80',
-    images: p.images && p.images.length > 0
-      ? p.images
-      : ['https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=600&q=80'],
-    sizes: p.sizes || ['M', 'L', 'XL'],
-    colors: p.colors || [{ nameBn: 'কালো', nameEn: 'Black', hex: '#000000' }],
-    inStock: p.stockCount !== undefined ? Number(p.stockCount) > 0 : true,
-    stockCount: Number(p.stockCount) || 50,
-    lowStockThreshold: p.lowStockThreshold || 10,
-    material: p.material || p.fabricEn || 'Premium Cotton',
-    weight: p.weight || '350g',
+    category,
+    brand: sanitizeText(p.brand, 'Unique Royal'),
+    price,
+    originalPrice,
+    discountPercent,
+    thumbnail: sanitizeText(p.thumbnail, Array.isArray(p.images) && p.images[0] ? String(p.images[0]) : 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=600&q=80'),
+    images: Array.isArray(p.images) && p.images.length > 0 ? p.images : ['https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=600&q=80'],
+    sizes: Array.isArray(p.sizes) && p.sizes.length > 0 ? p.sizes : ['M', 'L', 'XL'],
+    colors: Array.isArray(p.colors) && p.colors.length > 0 ? p.colors : [{ nameBn: 'কালো', nameEn: 'Black', hex: '#000000' }],
+    inStock: stockCount > 0,
+    stockCount,
+    lowStockThreshold,
+    material: sanitizeText(p.material, sanitizeText(p.fabricEn, 'Premium Cotton')),
+    weight: sanitizeText(p.weight, '350g'),
     isNewArrival: p.isNewArrival ?? true,
     isBestSeller: p.isBestSeller ?? false,
     isFeatured: p.isFeatured ?? false,
     isFlashSale: p.isFlashSale ?? false,
-    flashSaleEndTime: p.flashSaleEndTime || '',
-    status: p.status || 'published',
+    flashSaleEndTime: sanitizeText(p.flashSaleEndTime, ''),
+    status: sanitizeText(p.status, 'published'),
     rating: 5.0,
     reviewsCount: 0,
-    shortDescriptionBn: p.shortDescriptionBn || '',
-    shortDescriptionEn: p.shortDescriptionEn || '',
-    descriptionBn: p.descriptionBn || 'প্রিমিয়াম কোয়ালিটির রাজকীয় পোশাক।',
-    descriptionEn: p.descriptionEn || 'Premium quality luxury fashion attire.',
-    fabricBn: p.fabricBn || '১০০% প্রিমিয়াম সুতি',
-    fabricEn: p.fabricEn || '100% Premium Cotton',
-    careInstructionsBn: p.careInstructionsBn || 'হাতে ধুয়ে ড্রায়ারে শুকান।',
-    careInstructionsEn: p.careInstructionsEn || 'Gentle hand wash and line dry.',
-    tags: p.tags || ['new', p.category],
-    seoTitle: p.seoTitle || p.titleEn,
-    seoDescription: p.seoDescription || p.shortDescriptionEn || p.descriptionEn,
+    shortDescriptionBn: sanitizeText(p.shortDescriptionBn, ''),
+    shortDescriptionEn: sanitizeText(p.shortDescriptionEn, ''),
+    descriptionBn: sanitizeText(p.descriptionBn, 'প্রিমিয়াম কোয়ালিটির রাজকীয় পোশাক।'),
+    descriptionEn: sanitizeText(p.descriptionEn, 'Premium quality luxury fashion attire.'),
+    fabricBn: sanitizeText(p.fabricBn, '১০০% প্রিমিয়াম সুতি'),
+    fabricEn: sanitizeText(p.fabricEn, '100% Premium Cotton'),
+    careInstructionsBn: sanitizeText(p.careInstructionsBn, 'হাতে ধুয়ে ড্রায়ারে শুকান।'),
+    careInstructionsEn: sanitizeText(p.careInstructionsEn, 'Gentle hand wash and line dry.'),
+    tags: Array.isArray(p.tags) && p.tags.length > 0 ? p.tags : ['new', category],
+    seoTitle: sanitizeText(p.seoTitle, titleEn),
+    seoDescription: sanitizeText(p.seoDescription, sanitizeText(p.shortDescriptionEn, p.descriptionEn)),
     reviews: [],
     createdAt: new Date().toISOString(),
   };
@@ -317,18 +324,19 @@ app.get('/api/categories', (req, res) => {
 });
 
 app.post('/api/categories', (req, res) => {
-  const { nameBn, nameEn, slug, descriptionBn, descriptionEn, image, status, parentCategory } = req.body;
+  const { nameBn, nameEn, slug, descriptionBn, descriptionEn, image, status, parentCategory } = req.body || {};
+  const categoryNameEn = sanitizeText(nameEn, 'Category');
   const newCat = {
     id: `cat-${Date.now()}`,
-    slug: slug || nameEn.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    nameBn,
-    nameEn,
-    descriptionBn: descriptionBn || '',
-    descriptionEn: descriptionEn || '',
-    image: image || 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=600&q=80',
+    slug: sanitizeText(slug, toSlug(categoryNameEn, 'category')),
+    nameBn: sanitizeText(nameBn, categoryNameEn),
+    nameEn: categoryNameEn,
+    descriptionBn: sanitizeText(descriptionBn, ''),
+    descriptionEn: sanitizeText(descriptionEn, ''),
+    image: sanitizeText(image, 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=600&q=80'),
     itemCount: 0,
-    status: status || 'active',
-    parentCategory: parentCategory || 'None',
+    status: sanitizeText(status, 'active'),
+    parentCategory: sanitizeText(parentCategory, 'None'),
   };
   categories.unshift(newCat);
   res.status(201).json({ success: true, category: newCat });
@@ -352,14 +360,15 @@ app.get('/api/brands', (req, res) => {
 });
 
 app.post('/api/brands', (req, res) => {
-  const { name, slug, logo, description, status } = req.body;
+  const { name, slug, logo, description, status } = req.body || {};
+  const brandName = sanitizeText(name, 'Brand');
   const newBrand = {
     id: `b-${Date.now()}`,
-    name,
-    slug: slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    logo: logo || 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=150&q=80',
-    description: description || '',
-    status: status || 'active',
+    name: brandName,
+    slug: sanitizeText(slug, toSlug(brandName, 'brand')),
+    logo: sanitizeText(logo, 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=150&q=80'),
+    description: sanitizeText(description, ''),
+    status: sanitizeText(status, 'active'),
   };
   brands.unshift(newBrand);
   res.status(201).json({ success: true, brand: newBrand });
@@ -383,17 +392,18 @@ app.get('/api/coupons', (req, res) => {
 });
 
 app.post('/api/coupons', (req, res) => {
-  const { code, discountType, discountValue, minOrderAmount, expiresAt, isActive, maxDiscount, usageLimit } = req.body;
+  const { code, discountType, discountValue, minOrderAmount, expiresAt, isActive, maxDiscount, usageLimit } = req.body || {};
+  const normalizedCode = sanitizeText(code, 'SAVE').toUpperCase().trim();
   const newCoupon = {
     id: `c-${Date.now()}`,
-    code: (code || '').toUpperCase().trim(),
-    discountType: discountType || 'percentage',
-    discountValue: Number(discountValue) || 10,
-    minOrderAmount: Number(minOrderAmount) || 1000,
-    maxDiscount: maxDiscount ? Number(maxDiscount) : undefined,
-    usageLimit: usageLimit ? Number(usageLimit) : 100,
+    code: normalizedCode,
+    discountType: sanitizeText(discountType, 'percentage'),
+    discountValue: toNumberOrDefault(discountValue, 10),
+    minOrderAmount: toNumberOrDefault(minOrderAmount, 1000),
+    maxDiscount: maxDiscount !== undefined ? toNumberOrDefault(maxDiscount, undefined as never) : undefined,
+    usageLimit: usageLimit !== undefined ? toNumberOrDefault(usageLimit, 100) : 100,
     usedCount: 0,
-    expiresAt: expiresAt || '2026-12-31T23:59:59Z',
+    expiresAt: sanitizeText(expiresAt, '2026-12-31T23:59:59Z'),
     isActive: isActive ?? true,
   };
   coupons.unshift(newCoupon);
