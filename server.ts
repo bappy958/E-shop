@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { MongoClient } from 'mongodb';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -23,6 +24,10 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://amsamiul27_db_user:db_password@cluster0.pzavbis.mongodb.net/?retryWrites=true&w=majority';
+
+let mongoClient: MongoClient | null = null;
+let mongoConnected = false;
 
 // Security Headers Middleware
 app.use((req, res, next) => {
@@ -93,6 +98,26 @@ if (process.env.GEMINI_API_KEY) {
     console.warn('Gemini API client initialization deferred or missing key:', err);
   }
 }
+
+async function connectMongo() {
+  if (mongoClient) {
+    return mongoClient;
+  }
+
+  try {
+    mongoClient = new MongoClient(MONGODB_URI);
+    await mongoClient.connect();
+    mongoConnected = true;
+    console.log('MongoDB connected successfully');
+    return mongoClient;
+  } catch (error) {
+    console.warn('MongoDB connection failed, continuing with in-memory data:', error);
+    mongoConnected = false;
+    return null;
+  }
+}
+
+void connectMongo();
 
 // REST API Endpoints
 
