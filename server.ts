@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import {
   INITIAL_PRODUCTS,
@@ -13,11 +14,15 @@ import {
 } from './src/data/initialData.ts';
 import { sanitizeText, toNumberOrDefault, toSlug } from './src/serverUtils.ts';
 
+dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 // Security Headers Middleware
 app.use((req, res, next) => {
@@ -710,8 +715,19 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Unique Collection 4.0 Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Unique Collection 4.0 Server running on ${APP_URL}`);
+    console.log(`Environment: ${NODE_ENV}`);
+  });
+
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Please stop the existing process or set a different PORT.`);
+      process.exit(1);
+    }
+
+    console.error('Server startup failed:', error.message);
+    process.exit(1);
   });
 }
 
