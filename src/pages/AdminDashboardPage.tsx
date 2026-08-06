@@ -67,43 +67,79 @@ export const AdminDashboardPage: React.FC<{ onNavigate: (path: string) => void }
   const loadProducts = () => {
     fetch('/api/products')
       .then((res) => res.json())
-      .then((data) => Array.isArray(data) && data.length > 0 && setProducts(data))
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setProducts(data);
+        } else {
+          setProducts([]);
+        }
+      })
+      .catch(() => setProducts([]));
   };
 
   const loadCategories = () => {
     fetch('/api/categories')
       .then((res) => res.json())
-      .then((data) => Array.isArray(data) && data.length > 0 && setCategories(data))
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCategories(data);
+        } else {
+          setCategories([]);
+        }
+      })
+      .catch(() => setCategories([]));
   };
 
   const loadBrands = () => {
     fetch('/api/brands')
       .then((res) => res.json())
-      .then((data) => Array.isArray(data) && data.length > 0 && setBrands(data))
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setBrands(data);
+        } else {
+          setBrands([]);
+        }
+      })
+      .catch(() => setBrands([]));
   };
 
   const loadOrders = () => {
     fetch('/api/orders')
       .then((res) => res.json())
-      .then((data) => Array.isArray(data) && data.length > 0 && setOrders(data))
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setOrders(data);
+        } else {
+          setOrders([]);
+        }
+      })
+      .catch(() => setOrders([]));
   };
 
   const loadCoupons = () => {
     fetch('/api/coupons')
       .then((res) => res.json())
-      .then((data) => Array.isArray(data) && data.length > 0 && setCoupons(data))
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCoupons(data);
+        } else {
+          setCoupons([]);
+        }
+      })
+      .catch(() => setCoupons([]));
   };
 
   const loadReviews = () => {
     fetch('/api/reviews')
       .then((res) => res.json())
-      .then((data) => Array.isArray(data) && data.length > 0 && setReviews(data))
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setReviews(data);
+        } else {
+          setReviews([]);
+        }
+      })
+      .catch(() => setReviews([]));
   };
 
   const loadAllData = () => {

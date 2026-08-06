@@ -386,6 +386,9 @@ export const AdminProductsView: React.FC<AdminProductsViewProps> = ({
         );
         setIsModalOpen(false);
         onRefreshProducts();
+        window.setTimeout(() => onRefreshProducts(), 250);
+      } else {
+        alert(data.error || 'পণ্য সংরক্ষণ করতে সমস্যা হয়েছে।');
       }
     } catch (err) {
       alert('পণ্য সংসংরক্ষণ করতে সমস্যা হয়েছে।');
